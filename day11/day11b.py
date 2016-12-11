@@ -1,4 +1,6 @@
 import numpy as np
+import heapq
+import time
 
 
 # Principles
@@ -129,20 +131,14 @@ def findMoves( state ):
         DIRS.append(Move.DOWN)
     moves = []
     for d in DIRS:
-##        print "DIR:", Move.DIR_STR[ d ]
         floor_items = items( state, floor )
-##        print "\tItems on floor %d: %s"% ( floor, floor_items )
         for i, item_i in enumerate( floor_items ):
             state_i = moveItem( state, item_i, d )
-##            print "\t\tTesting", item_i, nameForItem(item_i)
             if ( isValid( state_i ) ):
-##                print "\t\t\tValid state results, adding the move"
                 moves.append( Move( d, [item_i] ) )
             for item_j in floor_items[i+1: ]:
                 state_ij = moveItem( state_i, item_j, d )
-##                print "\t\t\tTesting", item_j, nameForItem(item_j)
                 if ( isValid(state_ij) ):
-##                    print "\t\t\t\tValid state results, adding the move"
                     moves.append( Move( d, [item_i, item_j] ) )
     return moves
 
@@ -162,24 +158,13 @@ def explore( initState, finalState ):
     '''
     costs = {initState:0}  #mapping from state to cost to initState
     moves = findMoves( initState )
-    print moves
-    def prioritize( a, b ):
-        '''Sort algoritm to maintain the queue as a priority queue'''
-        return cmp( a[1], b[1] )
-    queue = [ (applyMove( initState, move ), 1) for move in moves ]
-##    count = 0
-##    dupe = 0
-    while queue:
-        testState, testCost = queue.pop(0)
-##        count += 1
-##        if ( count % 1000 == 0 ):
-##            print "Tested %d configurations with a queue of %d" % ( count, len(queue))
+    h = [ (1, applyMove( initState, move )) for move in moves ]
+    heapq.heapify( h )
+    while len(h):
+        testCost, testState = heapq.heappop(h)
         if ( testState == finalState ):
             return testCost
         if ( costs.has_key( testState ) ):
-##            dupe += 1
-##            if ( dupe % 1000 == 0 ):
-##                print "\tEncountered %d dupes" % dupe
             # Already encountered this state
             if ( testCost < costs[ testState ] ):
                 print '!!! Found smaller cost later !!!'
@@ -187,9 +172,9 @@ def explore( initState, finalState ):
         else:
             costs[ testState ] = testCost
             moves = findMoves( testState )
-            qCandidates = [ (applyMove( testState, move ), testCost + 1) for move in moves ]
-            queue.extend( filter( lambda x: not costs.has_key( x[0] ), qCandidates ) )
-            queue.sort( prioritize )
+            qCandidates = [ (testCost + 1, applyMove( testState, move )) for move in moves ]
+            for c in filter( lambda x: not costs.has_key( x[0] ), qCandidates ):
+                heapq.heappush(h, c )
     print "Exited without finding a solution"
     return np.inf
         
@@ -224,7 +209,7 @@ def initTest():
     return state
 
 if __name__ == '__main__':
-    if ( False ):
+    if ( True ):
         print "PROBLEM 1"
         state = initProblem()
     elif ( True ):
@@ -267,8 +252,11 @@ if __name__ == '__main__':
     if ( True ):
         print "Targeted final state"
         drawState(final, '  |')
+        start = time.clock()
         cost = explore( final, state )
+        elapsed = time.clock() - start
         print "Minimum cost:", cost
+        print "\tElapsed seconds:", elapsed
         
     
     
