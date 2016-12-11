@@ -18,6 +18,7 @@ class Floor:
         self.gen = []
         self.chip = []
         self.append( items )
+        
     def __str__( self ):
         s = 'F%d:' % ( self.floor_num )
         s += ''.join( map( lambda x: '{0:>5}'.format( x ), self.gen ) )
@@ -33,17 +34,24 @@ class Floor:
         else:
             return self.chip[ i - len( self.gen ) ]
 
+    def items( self ):
+        return self.gen + self.chip
+
     def __repr__( self ):
         return str(self )
 
-    def pop( self, i ):
+    def pop( self, ids ):
         '''Creates a version of this floor with the ith item removed.
 
         @returns a tuple (item, floor).'''
         items = self.gen + self.chip
-        item = items.pop( i )
+        ids.sort()
+        results = []
+        for id in ids[::-1]:
+            results.append( items.pop( id ) )
+##        item = items.pop( i )
         floor = Floor( self.floor_num, items )
-        return item, floor
+        return results, floor
 
     def test( self, items ):
         '''Tests to see if the addition of these items would lead to a valid floor state.
@@ -78,28 +86,38 @@ class Floor:
         
 
 
-class Generator:
+class Item:
+    ID = 0
+    def __init__( self ):
+        self.id = Item.ID
+        Item.ID += 1
+
+    def hash( self, floor ):
+        '''Assume floor in the range [0-3].
+        Pushes the two lowest bits left id * 2 bits'''
+        return (floor & 3) << (self.id * 2 )
+
+    def __repr__( self ):
+        return str( self )
+
+class Generator(Item):
     def __init__( self, type ):
+        Item.__init__( self )
         self.type = type
 
     def __str__( self ):
         return 'G_%s' % self.type
 
-    def __repr__( self ):
-        return str( self )
-
     def __eq__( self, m ):
         return self.type == m.type
         
-class Microchip:
+class Microchip(Item):
     def __init__( self, type ):
+        Item.__init__( self )
         self.type = type
-
+        
     def __str__( self ):
         return 'M_%s' % self.type
-
-    def __repr__( self ):
-        return str(self )
 
     def __eq__( self, g ):
         return self.type == g.type
@@ -117,10 +135,22 @@ FLOORS = [ Floor( 1, [ Generator(THULIUM), Microchip(THULIUM), Generator(PLUTONI
 ##           ]
 
 ##FLOORS = [ Floor( 1, [ Microchip('L'),  ] ),
-##           Floor( 2, [ Microchip('H'), ] ),
-##           Floor( 3, [ Generator('L'), Generator('H') ] ),
+##           Floor( 2, [  ] ),
+##           Floor( 3, [ Microchip('H'), Generator('L'), Generator('H') ] ),
 ##           Floor( 4, [ ] )
 ##           ]
+
+HISTORY = set()
+
+def hashFloors():
+    '''Creates a unique hash value for the state of the floors'''
+    hash = 0
+    for floor in FLOORS:
+        for item in floor.items():
+            local_hash = item.hash( floor.floor_num )
+##            print item, item.id, local_hash
+            hash |= item.hash( floor.floor_num )
+    return hash
 
 DEAD = 'DEAD'
 VALID = 'VALID'
@@ -164,18 +194,21 @@ def enumerateOptions( floor ):
         nbr = FLOORS[ floor + d ]
 ##        print "\tNbr:", nbr
         for i in xrange( len( this_floor ) ):
-            item_i, f = this_floor.pop( i )    # is this floor valid if I remove it?
+            item_i, f_i = this_floor.pop( [i] )    # is this floor valid if I remove it?
 ##            print "\t\tTesting", item_i
-            if ( f.isValid() ):
-##                print "\t\t\tFloor %d left valid - %s" % ( floor, f )
-                if nbr.test( [item_i] ):
+            if ( f_i.isValid() ):
+##                print "\t\t\tFloor %d left valid - %s" % ( floor, f_i )
+                if nbr.test( item_i ):
 ##                    print "\t\t\t\tFloor %d made valid" % ( nbr.floor_num )
-                    moves.append( Move( d, [item_i] ) )
+                    moves.append( Move( d, item_i ) )
             for j in xrange( i + 1, len( this_floor ) ):
-                item_j, f = this_floor.pop( j )
-                if ( f.isValid() ):
-                    if ( nbr.test( [item_i, item_j] ) ):
-                        moves.append( Move( d, [item_i, item_j] ) )
+                items_ij, f_j = this_floor.pop( [i, j] )
+##                print "\t\t\tTesting", items_ij
+                if ( f_j.isValid() ):
+##                    print "\t\t\t\tFloor %d left valid - %s" % ( floor, f_j )
+                    if ( nbr.test( items_ij ) ):
+##                        print "\t\t\t\t\tFloor %d made valid" % ( nbr.floor_num )
+                        moves.append( Move( d, items_ij ) )
     return moves
 
 def checkFloorState():
@@ -200,33 +233,35 @@ def undoMove( move, floor ):
     FLOORS[ floor ].append( move.payload )
     FLOORS[ floor + move.dir ].remove( move.payload )
 
-def findSolution( elevator, lastMove=None, depth=0, maxDepth=100 ):
+def findSolution( elevator, lastMove=None, depth=0, maxDepth=44 ):
     '''Evaluts a move and returns the number of moves required'''
-##    indent = '  ' * depth + '|'
+    indent = '  ' * depth + '|'
 ##    print indent, "=============================================="
-##    print indent, "findSolution( %d ) - depth %02d" % ( elevator, depth )
+##    print indent, "findSolution( %d )" % ( elevator )
     if ( depth >= maxDepth ):
 ##        print indent, "MAXIMUM DEPTH"
         return np.inf
     moves = enumerateOptions( elevator )
     best = np.inf
+##    print indent, "Move candidates:", moves
     for move in moves:
         # if I have multiple options, I can skip the reverse...if going back is the only option, take it.
+##        print indent, "\t", move, 'depth %02d' % ( depth )
         if ( move.isReverse( lastMove ) ):
-##            print indent, "\t\tOnly move is just back"
+##            print indent, "\t\tOnly available move reverses the previous move - end of chain"
             continue
-##        print indent,  "\t", move
+##        print indent, "\tBEFORE MOVE"
+##        drawFloors(indent + '\t')
         applyMove( move, elevator ) # modify the floor state
+        
         state = checkFloorState()
-##        drawFloors(indent)
+##        print indent, "\tMOVE APPLIED", state
+##        drawFloors(indent + "\t")
         if ( state == DEAD ):
-##            print indent, "\t\tDEAD!"
             pass
         elif ( state == DONE ):
-##            print indent, "\t\tDONE!"
             best = 1
         else:
-##            print indent, "\t\tVALID"
             local_best = 1 + findSolution( elevator + move.dir, move, depth + 1 )
             best = min( local_best, best )
         undoMove( move, elevator )
@@ -235,13 +270,17 @@ def findSolution( elevator, lastMove=None, depth=0, maxDepth=100 ):
 def test():
     print "\nTEST 1 ==================="
     drawFloors()
+##    print hashFloors()
 ##    print "State:", checkFloorState()
-##    moves = enumerateOptions( 3 )
-##    print '---MOVES---'
-##    for m in moves:
-##        print m
-    count = findSolution(0)
-    sys.stderr.write('COUNT: %d' % count )
+    if ( False ):
+        moves = enumerateOptions( 2 )
+        print '---MOVES---'
+        for m in moves:
+            print m
+    else:
+        HISTORY = set()
+        count = findSolution(0)
+        sys.stderr.write('COUNT: %s' % count )
 
 def problem():
     print "\nProblem 1 ==================="
